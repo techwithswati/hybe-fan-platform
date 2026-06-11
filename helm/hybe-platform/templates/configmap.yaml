@@ -1,0 +1,47 @@
+# ── A pplication ConfigMap ──────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hybe-platform-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  # Application-level config - non-sensitive values only
+  ENVIRONMENT: {{ .Values.global.environment | quote }}
+  REGION: {{ .Values.global.region | quote }}
+  LOG_LEVEL: "INFO"
+  DB_PORT: {{ .Values.database.port | quote }}
+  DB_HOST: {{ .Values.database.host | quote }}
+  REDIS_PORT: "6379"
+
+---
+
+# ── RDS Credentials Secret (managed by External Secrets Operator from AWS Secrets Manager)
+# This is the K8s secret scaffolding. External Secrets Operator syncs the actual 
+# credentials from AWS Secrets Manager (hybe/prod/rds) automatically.
+# DO NOT hardcode credentials here. This file is safe to commit to Git.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.database.secretName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: {{ .Values.database.secretName }}
+    creationPolicy: Owner
+  data:
+    - secretKey: username
+      remoteRef:
+        key: hybe/prod/rds
+        property: username
+    - secretKey: password
+      remoteRef:
+        key: hybe/prod/rds
+        property: password
