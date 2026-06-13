@@ -8,3 +8,5 @@ __pycache__/
 .env
 .vscode/
 
+hybe-fan-platform.code-workspace
+apps/**/*.pyc
