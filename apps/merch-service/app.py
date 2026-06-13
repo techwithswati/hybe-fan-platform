@@ -209,17 +209,17 @@ def purchase():
             "success": False,
             "message": "Cart expired. Stock has been released.",
         }), 410
-        
+
     # Simulate payment processing
     time.sleep(random.uniform(0.02, 0.08))
-    
+
     # Find price
     item_data = next((i for i in MERCH_CATALOG if i["sku"] == sku), None)
     if not item_data:
         return jsonify({"error": "Invalid SKU"}), 404
-    
+
     total_krw = item_data["price_krw"] * quantity
-    
+
     # Persist order to RDS
     order = Order(
         fan_id=fan_id,
@@ -234,12 +234,12 @@ def purchase():
     
     # Release cart lock (order confirmed)
     rdb.delete(lock_key)
-    
+
     logger.info(
         f"ORDER CONFIRMED - fan={fan_id} sku={sku} qty={quantity} "
         f"total=₩{total_krw:,} order_id={order.id} pod={POD_NAME}"
     )
-    
+
     return jsonify({
         "success": True,
         "order_id": order.id,
@@ -254,8 +254,8 @@ def purchase():
         "served_by": POD_NAME,
         "message": "Order confirmed! Ships from Seoul in 14 days 📦✈️",
     }), 201
-    
-    
+
+
 @app.route("/api/v1/merch/inventory", methods=["GET"])
 def inventory_summary():
     """Summary endpoint for Grafana dashboard."""
@@ -272,11 +272,11 @@ def inventory_summary():
             "remaining": remaining,
             "sell_through_pct": round((sold / item["stock"]) * 100, 1),
         })
-    
+
     return jsonify({"inventory": summary, "pod": POD_NAME}), 200
 
 
-# ---- Entrypoint ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ─── Entrypoint ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     init_db()
