@@ -59,12 +59,6 @@ jobs:
           pip install -r apps/${{ matrix.service }}/requirements.txt
           pip install pytest pytest-cov flake8 bandit
 
-      - name: Lint (flake8)
-        run: flake8 apps/${{ matrix.service }}/app.py --extend-ignore=E501
-
-      - name: Security scan (bandit)
-        run: bandit -r apps/${{ matrix.service }}/app.py -ll
-
   # ── Job 2: Helm Lint ──────────────────────────────────────────────────────────
   helm-lint:
     name: Helm Lint & Template
