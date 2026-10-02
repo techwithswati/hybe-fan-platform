@@ -1,0 +1,49 @@
+apiVersion: platform.hybe.dev/v1
+kind: Service
+metadata:
+  name: ticket-service
+  team: platform-eng
+  description: "Atomic ticket inventory management for merch drops. Handles concurrent purchases, prevents overselling."
+  slackChannel: "#ticket-incidents"
+
+spec:
+  language: python
+  framework: flask
+  port: 8080
+
+  replicas:
+    min: 3
+    max: 50
+    targetCPU: 60%
+
+  resources:
+    cpu:
+      request: 250m
+      limit: 500m
+    memory:
+      request: 512Mi
+      limit: 1Gi
+
+  persistence:
+    database:
+      type: mysql
+      backups:
+        enabled: true
+        retention: "30days"
+    cache:
+      type: redis
+
+  observability:
+    logging: true
+    metrics: true
+    tracing: true
+    dashboard: true
+
+  alerts:
+    - name: ErrorRateHigh
+      condition: "error_rate > 5%"
+      severity: critical
+    - name: P99LatencyHigh
+      condition: "p99_latency > 500ms"
+      severity: warning
+      

@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HYBE Platform Service Descriptor",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": ["platform.hybe.dev/v1"],
+      "description": "API version (always v1 for now)"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["Service"],
+      "description": "Resource type"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name", "team"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Service name (lowercase, hyphens only)"
+        },
+        "team": {
+          "type": "string",
+          "description": "Owning team"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this service does"
+        },
+        "slackChannel": {
+          "type": "string",
+          "pattern": "^#[a-z0-9-]+$",
+          "description": "Incident channel"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["language", "port", "replicas", "resources", "observability"],
+      "properties": {
+        "language": {
+          "type": "string",
+          "enum": ["python", "golang", "nodejs", "java"],
+          "description": "Programming language"
+        },
+        "framework": {
+          "type": "string",
+          "description": "Web framework (flask, gin, express, etc)"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 65535,
+          "description": "Service port"
+        },
+        "replicas": {
+          "type": "object",
+          "required": ["min", "max"],
+          "properties": {
+            "min": {
+              "type": "integer",
+              "minimum": 2,
+              "description": "Minimum replicas (must be ≥2, no SPOF)"
+            },
+            "max": {
+              "type": "integer",
+              "description": "Maximum replicas (HPA limit)"
+            },
+            "targetCPU": {
+              "type": "string",
+              "pattern": "^[0-9]{1,2}%$",
+              "description": "Target CPU % for HPA (e.g., '60%')"
+            }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "required": ["cpu", "memory"],
+          "properties": {
+            "cpu": {
+              "type": "object",
+              "required": ["request", "limit"],
+              "properties": {
+                "request": {"type": "string", "pattern": "^[0-9]+m$"},
+                "limit": {"type": "string", "pattern": "^[0-9]+m$"}
+              }
+            },
+            "memory": {
+              "type": "object",
+              "required": ["request", "limit"],
+              "properties": {
+                "request": {"type": "string", "pattern": "^[0-9]+(Mi|Gi)$"},
+                "limit": {"type": "string", "pattern": "^[0-9]+(Mi|Gi)$"}
+              }
+            }
+          }
+        },
+        "persistence": {
+          "type": "object",
+          "properties": {
+            "database": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "enum": ["mysql", "postgres", "none"]
+                },
+                "backups": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {"type": "boolean"},
+                    "retention": {"type": "string"}
+                  }
+                }
+              }
+            },
+            "cache": {
+              "type": "object",
+              "properties": {
+                "type": {"enum": ["redis", "none"]}
+              }
+            }
+          }
+        },
+        "observability": {
+          "type": "object",
+          "required": ["logging", "metrics", "tracing", "dashboard"],
+          "properties": {
+            "logging": {"type": "boolean"},
+            "metrics": {"type": "boolean"},
+            "tracing": {"type": "boolean"},
+            "dashboard": {"type": "boolean"}
+          }
+        },
+        "alerts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "condition", "severity"],
+            "properties": {
+              "name": {"type": "string"},
+              "condition": {"type": "string"},
+              "severity": {"enum": ["critical", "warning", "info"]}
+            }
+          }
+        }
+      }
+    }
+  }
+}
