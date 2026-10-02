@@ -1,0 +1,63 @@
+service:
+  name: ticket-service
+  team: platform-eng
+  description: Atomic ticket inventory management for merch drops. Handles concurrent
+    purchases, prevents overselling.
+  slackChannel: '#ticket-incidents'
+deployment:
+  replicaCount: 3
+  image:
+    repository: ecr.hybe.dev/ticket-service
+    tag: latest
+  containerPort: 8080
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 50
+  targetCPUUtilizationPercentage: 60%
+persistence:
+  database:
+    enabled: true
+    type: mysql
+    backups:
+      enabled: true
+      retention: 30days
+  cache:
+    enabled: true
+    type: redis
+observability:
+  logging:
+    enabled: true
+    format: json
+    level: info
+  metrics:
+    enabled: true
+    scrapeInterval: 30s
+  tracing:
+    enabled: true
+    sampleRate: 0.1
+  dashboard:
+    enabled: true
+    title: ticket-service - Service Metrics
+alerts:
+  enabled: true
+  rules:
+  - name: ErrorRateHigh
+    expr: error_rate > 5%
+    severity: critical
+    annotations:
+      summary: 'ticket-service: ErrorRateHigh'
+      runbook: https://runbooks.hybe.dev/ticket-service
+  - name: P99LatencyHigh
+    expr: p99_latency > 500ms
+    severity: warning
+    annotations:
+      summary: 'ticket-service: P99LatencyHigh'
+      runbook: https://runbooks.hybe.dev/ticket-service
