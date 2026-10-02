@@ -1,0 +1,86 @@
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║   ArgoCD Application — hybe-fan-platform                                     ║
+# ║   This is the PULL-BASED GitOps core: ArgoCD watches this repo and           ║
+# ║   automatically applies drift corrections to EKS.                            ║
+# ║                                                                              ║
+# ║   Flow: Git push → ArgoCD detects diff → Helm render → kubectl apply         ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hybe-fan-platform
+  namsespace: argocd
+  labels:
+    app.kubernetes.io/name: hybe-fan-platform
+    team: devops
+    environment: production
+  annotations:
+    # Link back to source repository for traceability
+    argocd.argpproj.io/sync-wave: "0"
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: devops-alerts
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: devops-alerts
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: devops-alerts
+  # Cascade deletion: if this App is deleted, also delete K8s resources
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: hybe-fan-platform
+
+  # ── Source: This Git Repository ────────────────────────────────────────────
+  source:
+    repoURL: https://github.com/techwithswati/hybe-fan-platform
+    targetRevsion: main                       # Track the main branch
+    path: helm/hybe-platform                 # Helm chart location in repo
+
+    helm:
+      releaseName: hybe-fan-platform
+      # values.yaml is read automatically from the chart path
+      # This is the GitOps trigger: updating image tag in values.yaml
+      # via scripts/promote.sh causes ArgoCD to detect drift and sync
+      valueFiles:
+        - values.yaml
+
+  # ── Destination: EKS Cluster ───────────────────────────────────────────────
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hybe-prod
+
+  # ── Sync Policy: Automatic Pull-Based Delivery ─────────────────────────────
+  syncPolicy:
+    automated:
+      prune: true         # Delete K8s resources removed from Git
+      selfHeal: true      # Re-sync if cluster state drifts from Git
+      allowEmpty: false   # Never sync an empty diff (safety guard)
+    
+    syncOptions:
+      - Validate=true                    # Validate manifest before applying
+      - CreatNamespace=true              # Auto-create hybe-prod namespace
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true                   # Prune old resources after new ones are up
+      - ApplyOutOfSyncOnly=true          # Only apply resources that differ
+      - RespectIgnoreDifferences=true
+    
+    # Retry on transient failures (network blip, API server restart)
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+
+  # ── Ignore Differences ────────────────────────────────────────────────────
+  # These fields are managed at runtime (HPA, metrics-server) - ArgoCD should
+  # not try to "correct" them back to the values.yaml defaults.
+  ignoreDifferences:
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/currentReplicas      # HPA manages this at runtime
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas             # HPA manages replicas at runtime
+
+  # ── Health Check Configuration ─────────────────────────────────────────────
+  # ArgoCD considers the app healthy only when all pods pass readiness probes
+  revisionHistoryLimit: 10

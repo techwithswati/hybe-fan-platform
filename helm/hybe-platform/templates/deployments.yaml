@@ -1,0 +1,294 @@
+{{/*
+  ╔══════════════════════════════════════════════════════════════════════════════╗
+  ║   HYBE Platform — Deployments Template                                       ║
+  ║   Renders ticket-service, merch-service, and api-gateway deployments.        ║
+  ╚══════════════════════════════════════════════════════════════════════════════╝
+*/}}
+
+# ── Ticket Service Deployment ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.ticketService.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.ticketService.name }}
+    app.kubernetes.io/name: {{ .Values.ticketService.name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Values.ticketService.image.tag | quote }}
+    environment: {{ .Values.global.environment }}
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    # ArgoCD auto-sync annotation - ArgoCD tracks this deployment
+    argocd.argoproj.io/managed-by: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.ticketService.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.ticketService.name }}
+  strategy:
+    type: {{ .Values.ticketService.updateStrategy.type }}
+    rollingUpdate:
+      maxSurge: {{ .Values.ticketService.updateStrategy.maxSurge }}
+      maxUnavailable: {{ .Values.ticketService.updateStrategy.maxUnavailable }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.ticketService.name }}
+        version: {{ .Values.ticketService.image.tag | quote }}
+      annotations:
+        # Force pod restart when ConfigMap changes
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      terminationGracePeriodSeconds: 60
+
+      # Spread pods across availability zones
+      {{- with .Values.ticketService.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      containers:
+        - name: {{ .Values.ticketService.name }}
+          image: "{{ .Values.ticketService.image.repository }}:{{ .Values.ticketService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+
+          env:
+            # Pod identity via Kubernetes Downward API (tracked in DB logs)
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # App config
+            - name: TOTAL_TICKETS
+              value: {{ .Values.ticketService.env.TOTAL_TICKETS | quote }}
+            - name: REDIS_HOST
+              value: {{ .Values.ticketService.env.REDIS_HOST | quote }}
+            # RDS credentials from Kubernetes Secret
+            - name: DB_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: username
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: password
+            - name: DB_NAME
+              value: "hybe_tickets"
+
+          resources:
+            {{- toYaml .Values.ticketService.resources | nindent 12 }}
+
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.ticketService.livenessProbe.path }}
+              port: 8080
+            initialDelaySeconds: {{ .Values.ticketService.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.ticketService.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.ticketService.livenessProbe.failureThreshold }}
+            timeoutSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.ticketService.readinessProbe.path }}
+              port: 8080
+            initialDelaySeconds: {{ .Values.ticketService.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.ticketService.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.ticketService.readinessProbe.failureThreshold }}
+            timeoutSeconds: 5
+
+          # Graceful shutdown — finish in-flight requests
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+
+      # Node affinity: prefer nodes with more CPU headroom
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - {{ .Values.ticketService.name }}
+                topologyKey: kubernetes.io/hostname
+
+---
+
+# ── Merch Service Deployment ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.merchService.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.merchService.name }}
+    app.kubernetes.io/name: {{ .Values.merchService.name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Values.merchService.image.tag | quote }}
+    environment: {{ .Values.global.environment }}
+spec:
+  replicas: {{ .Values.merchService.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.merchService.name }}
+  strategy:
+    type: {{ .Values.merchService.updateStrategy.type }}
+    rollingUpdate:
+      maxSurge: {{ .Values.merchService.updateStrategy.maxSurge }}
+      maxUnavailable: {{ .Values.merchService.updateStrategy.maxUnavailable }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.merchService.name }}
+        version: {{ .Values.merchService.image.tag | quote }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      terminationGracePeriodSeconds: 60
+
+      {{- with .Values.merchService.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      containers:
+        - name: {{ .Values.merchService.name }}
+          image: "{{ .Values.merchService.image.repository }}:{{ .Values.merchService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: 8081
+              name: http
+              protocol: TCP
+
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CART_TTL_SECONDS
+              value: {{ .Values.merchService.env.CART_TTL_SECONDS | quote }}
+            - name: REDIS_HOST
+              value: {{ .Values.merchService.env.REDIS_HOST | quote }}
+            - name: DB_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: username
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: password
+            - name: DB_NAME
+              value: "hybe_merch"
+
+          resources:
+            {{- toYaml .Values.merchService.resources | nindent 12 }}
+
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.merchService.livenessProbe.path }}
+              port: 8081
+            initialDelaySeconds: {{ .Values.merchService.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.merchService.livenessProbe.periodSeconds }}
+
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.merchService.readinessProbe.path }}
+              port: 8081
+            initialDelaySeconds: {{ .Values.merchService.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.merchService.readinessProbe.periodSeconds }}
+
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - {{ .Values.merchService.name }}
+                topologyKey: kubernetes.io/hostname
+
+---
+
+# ── API Gateway Deployment ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.apiGateway.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.apiGateway.name }}
+    app.kubernetes.io/name: {{ .Values.apiGateway.name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    environment: {{ .Values.global.environment }}
+spec:
+  replicas: {{ .Values.apiGateway.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.apiGateway.name }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.apiGateway.name }}
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: {{ .Values.apiGateway.name }}
+          image: "{{ .Values.apiGateway.image.repository }}:{{ .Values.apiGateway.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            {{- toYaml .Values.apiGateway.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5

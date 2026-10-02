@@ -1,0 +1,27 @@
+apiVersion: v2
+name: hybe-platform
+description: |
+  HYBE Global Fan Platform - High-Traffic Microservices
+  Handles ticket releases and merch drops for 50,000+ concurrent fans.
+  Deployed via ArgoCD GitOps on AWS EKS.
+
+type: application
+version: 1.4.2
+appVersion: "1.4.2"
+
+keywords:
+  - hybe
+  - kpop
+  - fan-platform
+  - microservices
+  - eks
+
+maintainers:
+  - name: HYBE DevOps Team
+    email: devops@hybe.com
+
+dependencies:
+  - name: redis
+    version: "19.6.2"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled

@@ -1,0 +1,95 @@
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║   ArgoCD AppProject — hybe-fan-platform                                      ║
+# ║   Defines RBAC, allowed repos/clusters, and sync permissions.                ║
+# ║   This is how a REAL enterprise GitOps setup is scoped.                      ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: hybe-fan-platform
+  namespace: argocd
+  # ArgoCD will not delete this project if it has apps in it.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "HYBE Global Fan Platform - EKS Production Workloads"
+
+  # ── Allowed Source Repos ───────────────────────────────────────────────────
+  sourceRepos:
+    - https://github.com/techwithswati/hybe-fan-platform     # This repo
+    - https://charts.bitnami.com/bitnami                # Redis Helm chart
+    - https://aws.github.io/eks-charts                  # AWS Load Balancer Controller
+
+  # ── Allowed Destination Clusters + Namespaces ──────────────────────────────
+  destinations:
+    - server: https://kubernetes.default.svc            # In-cluster (ArgoCD itself)
+      namespace: hybe-prod
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
+
+  # ── Cluster Resource Whitelist (what can be created at cluster scope) ──────
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: "rbac.authorization.k8s.io"
+      kind: ClusterRole
+    - group: "rbac.authorization.k8s.io"
+      kind: ClusterRoleBinding
+
+  # ── Namespace Resource Whitelist ───────────────────────────────────────────
+  namespaceResourceWhitelsit:
+    - group: "apps"
+      kind: Deployment
+    - group: "autoscaling"
+      kind: HorizontalPodAutoscaler
+    - group: "policy"
+      kind: PodDisruptionBudget
+    - group: "networking.k8s.io"
+      kind: Ingress
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: ServiceAccount
+    - group: "external-secrets.io"
+      kind: ExternalSecret
+  
+  # ── RBAC ──────────────────────────────────────────────────────────────────
+  roles:
+    # DevOps engineers can sync and manage
+    - name: devops-team
+      description: "Full access for DevOps team"
+      policies:
+        - p, proj:hybe-fan-platform:devops-team, applications, *, hybe-fan-platform/*, allow
+      groups:
+        - hybe-devops
+
+    # Developers can view + sync (but not delete)
+    - name: dev-team
+      description: "Read + sync for development team"
+      policies:
+        - p, proj:hybe-fan-platform:dev-team, applications, get, hybe-fan-platform/*, allow
+        - p, proj:hybe-fan-platform:dev-team, applications, sync, hybefan-platform/*, allow
+      groups:
+        - hybe-developers
+
+    # CI/CD service account (Github Actions)
+    - name: ci-bot
+      description: "Github Actions automated syncs"
+      policies:
+        - p, proj:hybe-fan-platform:ci-bot, applications, sync, hybe-fan-platform/*, allow
+        - p, proj:hybe-fan-platform:ci-bot, applications, get, hybe-fan-platform/*, allow
+
+  # ── Sync Windows ──────────────────────────────────────────────────────────────────
+  # Prevent production deployments during peak fan hours (KST 18:00-24:00 = UTC 09:00-15:00)
+  syncWindows:
+    - kind: deny
+      schedule: "0 9-15 * * *"          # UTC = 18:00-00:00 KST (fan prime time)
+      duration: 6h
+      applications:
+        - "*"
+      manualSync: false                 # Allow maual override by DevOps
+      timeZone: "UTC"

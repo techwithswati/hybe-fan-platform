@@ -1,0 +1,131 @@
+# ── Services ───────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.ticketService.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.ticketService.name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+    type: {{ .Values.ticketService.service.type }}
+    selector:
+      app: {{ .Values.ticketService.name }}
+    ports:
+      - name: http
+        port: {{ .Values.ticketService.service.port }}
+        targetPort: 8080
+        protocol: TCP
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.merchService.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.merchService.name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+    type: {{ .Values.merchService.service.type }}
+    selector:
+      app: {{ .Values.merchService.name }}
+    ports:
+      - name: http
+        port: {{ .Values.merchService.service.port }}
+        targetPort: 8081
+        protocol: TCP
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.apiGateway.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.apiGateway.name }}
+spec:
+    type: {{ .Values.apiGateway.service.type }}
+    selector:
+      app: {{ .Values.apiGateway.name }}
+    ports:
+      - name: http
+        port: {{ .Values.apiGateway.service.port }}
+        targetPort: 80
+        protocol: TCP
+
+---
+
+# ── AWS ALB Ingress ───────────────────────────────────────────────────────────────────
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hybe-platform-ingress
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    {{- range $key, $value := .Values.ingress.annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # All traffic goes through API gateway first (rate limiting, routing)
+          - path: /api/v1/tickets
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.apiGateway.name }}
+                port:
+                  number: 80
+          - path: /api/v1/merch
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.apiGateway.name }}
+                port:
+                  number: 80
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: {{ .Values.apiGateway.name }}
+                port:
+                  number: 80
+{{- end }}
+
+---
+
+# ── Namespace ───────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace }}
+  labels:
+    name: {{ .Values.namespace }}
+    environment: {{ .Values.global.environment }}
+    managed-by: helm
+
+---
+
+# ── ServiceAccount (IRSA) ───────────────────────────────────────────────────────────────────
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    {{- toYaml .Values.serviceAccount.annotations | nindent 4 }}
+    {{- end }}
+    
