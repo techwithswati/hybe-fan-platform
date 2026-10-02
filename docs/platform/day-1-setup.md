@@ -43,7 +43,3 @@ Policies: OK
 | Database backups | If stateful | Data protection |
 | Observability | All enabled | Debugging, monitoring |
 | Team ownership | Required | Incident response |
-
-## Next Steps
-
-Tomorrow: Build the controller that generates Kubernetes manifests from service descriptors.
